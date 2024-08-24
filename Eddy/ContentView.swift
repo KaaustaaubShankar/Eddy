@@ -5,6 +5,7 @@ struct ChatMessage: Identifiable {
     let id = UUID()
     let isMine: Bool
     let audioFileURL: URL?
+    let timestamp: Date // Added timestamp property
 }
 
 struct ContentView: View {
@@ -13,24 +14,37 @@ struct ContentView: View {
     @State private var isRecording = false
     @State private var audioFileURL: URL?
     @State private var messages: [ChatMessage] = []
+    @State private var isDarkMode = false // State variable for dark mode
     
     var body: some View {
         VStack {
             List(messages) { message in
-                HStack {
-                    if message.isMine {
-                        Spacer()
-                        AudioMessageView(audioFileURL: message.audioFileURL)
-                            .background(Color.blue.opacity(0.2))
-                            .cornerRadius(10)
-                            .padding(.horizontal)
-                    } else {
-                        AudioMessageView(audioFileURL: nil, isTextToSpeech: true)
-                            .background(Color.gray.opacity(0.2))
-                            .cornerRadius(10)
-                            .padding(.horizontal)
-                        Spacer()
+                VStack(alignment: .leading) {
+                    HStack {
+                        if message.isMine {
+                            Spacer()
+                            AudioMessageView(audioFileURL: message.audioFileURL)
+                                .background(Color.blue.opacity(0.2))
+                                .cornerRadius(10)
+                                .padding(.trailing, 16) // Add more padding to the right side for "mine" messages
+                                .padding(.leading, 50) // Add more padding to the left side for spacing
+                        } else {
+                            AudioMessageView(audioFileURL: nil, isTextToSpeech: true)
+                                .background(Color.gray.opacity(0.2))
+                                .cornerRadius(10)
+                                .padding(.leading, 16) // Add more padding to the left side for "other" messages
+                                .padding(.trailing, 50) // Add more padding to the right side for spacing
+                            Spacer()
+                        }
                     }
+                    .padding(.vertical, 8) // Add vertical padding between messages
+                    
+                    // Timestamp
+                    Text(formattedTimestamp(message.timestamp))
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.leading, message.isMine ? 50 : 16)
+                        .padding(.trailing, message.isMine ? 16 : 50)
                 }
             }
             .listStyle(PlainListStyle())
@@ -56,9 +70,19 @@ struct ContentView: View {
                         .cornerRadius(10)
                 }
                 .disabled(audioFileURL == nil)
+                
+                Button(action: {
+                    self.isDarkMode.toggle()
+                }) {
+                    Image(systemName: isDarkMode ? "sun.max.fill" : "moon.fill")
+                        .padding()
+                        .background(Color.gray.opacity(0.2))
+                        .cornerRadius(10)
+                }
             }
             .padding()
         }
+        .preferredColorScheme(isDarkMode ? .dark : .light) // Apply the color scheme
     }
     
     // MARK: - Recording and Sending Messages
@@ -101,14 +125,14 @@ struct ContentView: View {
     
     func sendMessage() {
         if let url = audioFileURL {
-            let newMessage = ChatMessage(isMine: true, audioFileURL: url)
+            let newMessage = ChatMessage(isMine: true, audioFileURL: url, timestamp: Date()) // Set timestamp to current date and time
             messages.append(newMessage)
             audioFileURL = nil
         }
         
         // Simulate receiving a "Hello, World!" text-to-speech message from the other person
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            let textToSpeechMessage = ChatMessage(isMine: false, audioFileURL: nil)
+            let textToSpeechMessage = ChatMessage(isMine: false, audioFileURL: nil, timestamp: Date()) // Set timestamp to current date and time
             messages.append(textToSpeechMessage)
         }
     }
@@ -116,6 +140,13 @@ struct ContentView: View {
     func getDocumentsDirectory() -> URL {
         let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
         return paths[0]
+    }
+    
+    func formattedTimestamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 
@@ -145,9 +176,8 @@ struct AudioMessageView: View {
             }
             .disabled(audioFileURL == nil && !isTextToSpeech)
         }
+        .padding() // Add padding inside the message bubble
     }
-
-
     
     func playAudio() {
         if isTextToSpeech {
