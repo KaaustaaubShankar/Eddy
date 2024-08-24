@@ -1,11 +1,43 @@
 import SwiftUI
 import AVFoundation
 
+import Foundation
+
+func fetchAudioFromAPI(completion: @escaping (URL?) -> Void) {
+    guard let url = URL(string: "http://192.168.1.203:4000/get-audio") else {
+        completion(nil)
+        return
+    }
+
+    let task = URLSession.shared.dataTask(with: url) { data, response, error in
+        if let error = error {
+            print("Failed to fetch audio file: \(error)")
+            completion(nil)
+            return
+        }
+        
+        guard let data = data, let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("received-\(UUID()).mp3") as URL? else {
+            completion(nil)
+            return
+        }
+        
+        do {
+            try data.write(to: tempURL)
+            completion(tempURL)
+        } catch {
+            print("Failed to save audio file: \(error)")
+            completion(nil)
+        }
+    }
+    
+    task.resume()
+}
+
 struct ChatMessage: Identifiable {
     let id = UUID()
     let isMine: Bool
     let audioFileURL: URL?
-    let timestamp: Date // Added timestamp property
+    let timestamp: Date
 }
 
 struct ContentView: View {
@@ -29,7 +61,7 @@ struct ContentView: View {
                                 .padding(.trailing, 16) // Add more padding to the right side for "mine" messages
                                 .padding(.leading, 50) // Add more padding to the left side for spacing
                         } else {
-                            AudioMessageView(audioFileURL: nil, isTextToSpeech: true)
+                            AudioMessageView(audioFileURL: message.audioFileURL, isTextToSpeech: false) // Pass the URL for remote audio
                                 .background(Color.gray.opacity(0.2))
                                 .cornerRadius(10)
                                 .padding(.leading, 16) // Add more padding to the left side for "other" messages
@@ -130,10 +162,12 @@ struct ContentView: View {
             audioFileURL = nil
         }
         
-        // Simulate receiving a "Hello, World!" text-to-speech message from the other person
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            let textToSpeechMessage = ChatMessage(isMine: false, audioFileURL: nil, timestamp: Date()) // Set timestamp to current date and time
-            messages.append(textToSpeechMessage)
+        // Fetch audio from API for the "other" person
+        fetchAudioFromAPI { audioURL in
+            DispatchQueue.main.async {
+                let textToSpeechMessage = ChatMessage(isMine: false, audioFileURL: audioURL, timestamp: Date()) // Set timestamp to current date and time
+                messages.append(textToSpeechMessage)
+            }
         }
     }
     
@@ -150,6 +184,7 @@ struct ContentView: View {
     }
 }
 
+
 struct AudioMessageView: View {
     var audioFileURL: URL?
     var isTextToSpeech: Bool = false
@@ -160,7 +195,7 @@ struct AudioMessageView: View {
     @State private var speechSynthesizer: AVSpeechSynthesizer?
     @State private var audioDelegate: AudioPlayerDelegateWrapper? // Retain the delegate
     @State private var speechDelegate: SpeechSynthesizerDelegateWrapper? // Retain the speech delegate
-    
+
     var body: some View {
         HStack {
             Image(systemName: "face.smiling")
@@ -180,7 +215,9 @@ struct AudioMessageView: View {
     }
     
     func playAudio() {
-        if isTextToSpeech {
+        if isPlaying {
+            stopAudio()
+        } else if isTextToSpeech {
             playTextToSpeech()
         } else if let url = audioFileURL {
             do {
@@ -197,6 +234,17 @@ struct AudioMessageView: View {
         }
     }
     
+    func stopAudio() {
+        if isTextToSpeech {
+            speechSynthesizer?.stopSpeaking(at: .immediate)
+            isPlaying = false
+        } else {
+            audioPlayer?.stop()
+            audioPlayer = nil
+            isPlaying = false
+        }
+    }
+    
     func playTextToSpeech() {
         speechSynthesizer = AVSpeechSynthesizer()
         let utterance = AVSpeechUtterance(string: "Hello, World!")
@@ -209,6 +257,7 @@ struct AudioMessageView: View {
         isPlaying = true
     }
 }
+
 
 class AudioPlayerDelegateWrapper: NSObject, AVAudioPlayerDelegate {
     let onFinish: (Bool) -> Void
